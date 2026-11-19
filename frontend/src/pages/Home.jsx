@@ -35,13 +35,13 @@ const Home = () => {
                     backgroundClip: 'text',
                     marginBottom: '1rem'
                 }}>
-                    👋 HelloFace
+                    👋 PrivacyFace
                 </h1>
                 <p style={{ fontSize: '1.25rem', color: 'var(--color-text-secondary)', maxWidth: '600px', margin: '0 auto' }}>
-                    100% Free, Open-Source Face Recognition System
+                    Consent-based, lightweight face matching demo
                 </p>
                 <p style={{ color: 'var(--color-text-muted)', marginTop: '0.5rem' }}>
-                    No API Keys • No External Services • Fully Local
+                    OpenCV Haar detection • Spatial LBP matching • Encrypted descriptors
                 </p>
             </div>
 
@@ -86,7 +86,7 @@ const Home = () => {
                         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>👤</div>
                         <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Enroll User</h3>
                         <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>
-                            Register a new face in the system
+                            Enroll your face with explicit consent
                         </p>
                     </div>
                 </Link>
@@ -96,7 +96,7 @@ const Home = () => {
                         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔍</div>
                         <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Recognize Face</h3>
                         <p style={{ color: 'var(--color-text-secondary)', margin: 0 }}>
-                            Identify enrolled users in real-time
+                            Compare a live camera capture with consented enrollments
                         </p>
                     </div>
                 </Link>
@@ -115,10 +115,10 @@ const Home = () => {
                     <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚙️</div>
                     <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Features</h3>
                     <ul style={{ color: 'var(--color-text-secondary)', paddingLeft: '1.25rem', margin: 0 }}>
-                        <li>MediaPipe face detection</li>
-                        <li>InsightFace embeddings</li>
-                        <li>FAISS vector search</li>
-                        <li>100% local processing</li>
+                        <li>OpenCV Haar face detection</li>
+                        <li>Spatial Local Binary Pattern (LBP) descriptors</li>
+                        <li>Encrypted face descriptors in SQLite</li>
+                        <li>CPU-only demo matching</li>
                     </ul>
                 </div>
             </div>
@@ -127,8 +127,7 @@ const Home = () => {
             <div className="glass-card">
                 <h3 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>🚀 About HelloFace</h3>
                 <p style={{ color: 'var(--color-text-secondary)', lineHeight: '1.8' }}>
-                    HelloFace is a completely free and open-source face recognition system that runs entirely on your local machine.
-                    No external APIs, no API keys, no paid services - just powerful computer vision technology accessible to everyone.
+                    PrivacyFace is a lightweight, consent-based face matching prototype. It uses OpenCV Haar detection and spatial LBP descriptors to compare enrolled faces. This is an educational demo, not a high-security identity verification system; results can vary with lighting, pose, and camera quality.
                 </p>
                 <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                     <span className="badge">🆓 100% Free</span>
