@@ -5,6 +5,7 @@ import { api } from '../api';
 const Enroll = () => {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
+    const [consent, setConsent] = useState(false);
     const [capturedImage, setCapturedImage] = useState(null);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState(null);
@@ -20,6 +21,12 @@ const Enroll = () => {
 
         if (!name || !email) {
             setMessage('Please fill in all fields');
+            setMessageType('error');
+            return;
+        }
+
+        if (!consent) {
+            setMessage('Please confirm that you consent to face enrollment.');
             setMessageType('error');
             return;
         }
@@ -42,6 +49,7 @@ const Enroll = () => {
             setTimeout(() => {
                 setName('');
                 setEmail('');
+                setConsent(false);
                 setCapturedImage(null);
                 setMessage(null);
             }, 3000);
@@ -89,6 +97,13 @@ const Enroll = () => {
                     </div>
 
                     <div className="input-group">
+                        <label style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', color: 'var(--color-text-secondary)' }}>
+                            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} disabled={loading} />
+                            I consent to having my face features processed for this demo. I understand I can request deletion of my enrollment.
+                        </label>
+                    </div>
+
+                    <div className="input-group">
                         <label className="input-label">Capture Photo</label>
                         <WebcamCapture onCapture={handleCapture} showPreview={true} />
                     </div>
@@ -102,7 +117,7 @@ const Enroll = () => {
                     <button
                         type="submit"
                         className="btn btn-primary"
-                        disabled={loading || !capturedImage}
+                        disabled={loading || !capturedImage || !consent}
                         style={{ width: '100%', marginTop: '1rem' }}
                     >
                         {loading ? (
