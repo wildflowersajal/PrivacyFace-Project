@@ -11,6 +11,7 @@ export const api = {
                 name,
                 email,
                 image: imageBase64,
+                consent: true,
             }),
         });
 
