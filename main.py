@@ -180,7 +180,9 @@ async def get_stats():
             "total_users": database.get_user_count(),
             "total_embeddings": database.get_user_count(),
             "recognition_method": "OpenCV Haar + spatial LBP",
-            "distance_threshold": LBP_DISTANCE_THRESHOLD
+            "recognition_threshold": 1.0 - LBP_DISTANCE_THRESHOLD,
+            "distance_threshold": LBP_DISTANCE_THRESHOLD,
+            "embedding_dimension": 16384
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(exc)}")
