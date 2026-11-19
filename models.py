@@ -9,6 +9,7 @@ class EnrollRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="User's full name")
     email: EmailStr = Field(..., description="User's email address")
     image: str = Field(..., description="Base64 encoded image")
+    consent: bool = Field(False, description="User explicitly consents to biometric enrollment")
 
 
 class EnrollResponse(BaseModel):
