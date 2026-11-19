@@ -40,7 +40,7 @@ const Navigation = () => {
                         WebkitTextFillColor: 'transparent',
                         backgroundClip: 'text'
                     }}>
-                        👋 HelloFace
+                        👋 PrivacyFace
                     </h2>
                 </Link>
 
@@ -92,10 +92,10 @@ const App = () => {
                 }}>
                     <div className="container text-center">
                         <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>
-                            HelloFace - 100% Free, Open-Source Face Recognition
+                            PrivacyFace - Consent-Based Face Matching Demo
                         </p>
                         <p style={{ color: 'var(--color-text-muted)', margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>
-                            Built with ❤️ using MediaPipe, InsightFace, FAISS, FastAPI & React
+                            Built with ❤️ using OpenCV, LBP, FastAPI & React
                         </p>
                     </div>
                 </footer>
