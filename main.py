@@ -10,14 +10,13 @@ from models import (
     UserResponse, UsersListResponse, DeleteResponse, HealthResponse, FaceMatch
 )
 from face_detector import FaceDetector
-from face_embedder import FaceEmbedder
 from vector_store import VectorStore
 from database import Database
 
 
 # Global instances (initialized on startup)
 face_detector: Optional[FaceDetector] = None
-face_embedder: Optional[FaceEmbedder] = None
+face_embedder = None
 vector_store: Optional[VectorStore] = None
 database: Optional[Database] = None
 
@@ -33,19 +32,17 @@ async def lifespan(app: FastAPI):
     print("🚀 Initializing HelloFace backend...")
     
     # Initialize components
-    print("📷 Loading MediaPipe face detector...")
+    # Keep heavy ML models unloaded on Render's 512 MiB free instance.
+    print("📷 Initializing lightweight OpenCV face detector...")
     face_detector = FaceDetector(min_detection_confidence=0.7)
-    
-    print("🧠 Loading InsightFace embedding model (this may take a moment)...")
-    face_embedder = FaceEmbedder(model_name='buffalo_s')
-    
+
     print("🔍 Initializing FAISS vector store...")
     vector_store = VectorStore(embedding_dim=512, index_path="data/faiss_index")
     
     print("💾 Connecting to database...")
     database = Database(db_path="data/helloface.db")
     
-    print("✅ HelloFace backend ready!")
+    print("✅ HelloFace lightweight API ready; face embedding is disabled on 512 MiB tier.")
     
     yield
     
@@ -86,7 +83,7 @@ async def health_check():
     """Health check endpoint."""
     return HealthResponse(
         status="healthy",
-        models_loaded=face_detector is not None and face_embedder is not None,
+        models_loaded=False,
         database_connected=database is not None,
         vector_store_ready=vector_store is not None
     )
@@ -102,6 +99,10 @@ async def enroll_user(request: EnrollRequest):
     - Stores in database and vector store
     """
     try:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Real face enrollment is disabled on the free 512 MiB hosting tier because the embedding model exceeds available memory."
+        )
         # Check if email already exists
         existing_user = database.get_user_by_email(request.email)
         if existing_user:
@@ -175,6 +176,10 @@ async def recognize_face(request: RecognizeRequest):
     - Returns user info if confidence above threshold
     """
     try:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Real face recognition is disabled on the free 512 MiB hosting tier because the embedding model exceeds available memory."
+        )
         # Check if any users enrolled
         if vector_store.get_total_embeddings() == 0:
             return RecognizeResponse(
