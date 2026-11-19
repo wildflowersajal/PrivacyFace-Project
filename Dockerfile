@@ -1,18 +1,21 @@
-FROM node:20-alpine
+FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
-RUN npm install
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY . .
 
-# Expose port
-EXPOSE 5173
+RUN mkdir -p data
 
-# Run development server
-CMD ["npm", "run", "dev", "--", "--host"]
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
