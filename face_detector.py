@@ -1,124 +1,66 @@
-"""Face detection using MediaPipe."""
+"""Lightweight face detection using OpenCV Haar cascades."""
+import base64
+import io
+from typing import List, Tuple
+
 import cv2
 import numpy as np
-import mediapipe as mp
-from typing import List, Tuple, Optional
-import base64
 from PIL import Image
-import io
 
 
 class FaceDetector:
-    """Face detector using MediaPipe Face Detection."""
-    
+    """Low-memory face detector suitable for small CPU instances."""
+
     def __init__(self, min_detection_confidence: float = 0.7):
-        """
-        Initialize MediaPipe face detector.
-        
-        Args:
-            min_detection_confidence: Minimum confidence for face detection (0-1)
-        """
-        self.mp_face_detection = mp.solutions.face_detection
-        self.face_detection = self.mp_face_detection.FaceDetection(
-            model_selection=1,  # 1 for full range (better for varied distances)
-            min_detection_confidence=min_detection_confidence
-        )
-        
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        self.detector = cv2.CascadeClassifier(cascade_path)
+        if self.detector.empty():
+            raise RuntimeError("Could not load OpenCV Haar face detector")
+        self.min_neighbors = 5
+
     def decode_image(self, base64_image: str) -> np.ndarray:
-        """
-        Decode base64 image to numpy array.
-        
-        Args:
-            base64_image: Base64 encoded image string
-            
-        Returns:
-            Image as numpy array in RGB format
-        """
-        # Remove data URL prefix if present
-        if ',' in base64_image:
-            base64_image = base64_image.split(',')[1]
-            
-        # Decode base64
+        if "," in base64_image:
+            base64_image = base64_image.split(",", 1)[1]
         image_bytes = base64.b64decode(base64_image)
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        # Convert to RGB numpy array
-        image_np = np.array(image.convert('RGB'))
-        
-        return image_np
-    
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        return np.asarray(image)
+
     def detect_faces(self, image: np.ndarray) -> List[Tuple[np.ndarray, dict]]:
-        """
-        Detect faces in image and return cropped face regions.
-        
-        Args:
-            image: Input image as numpy array (RGB)
-            
-        Returns:
-            List of tuples (cropped_face, bounding_box_dict)
-            bounding_box_dict contains: {x, y, width, height}
-        """
-        # Convert to RGB if needed (MediaPipe expects RGB)
-        if len(image.shape) == 2:  # Grayscale
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        elif image.shape[2] == 4:  # RGBA
-            image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
-            
-        # Detect faces
-        results = self.face_detection.process(image)
-        
+        if image.ndim == 2:
+            gray = image
+            rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        elif image.shape[2] == 4:
+            rgb = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
+            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        else:
+            rgb = image
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        h, w = gray.shape[:2]
+        scale = min(1.0, 640.0 / max(h, w))
+        if scale < 1.0:
+            small = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        else:
+            small = gray
+
+        boxes = self.detector.detectMultiScale(
+            small, scaleFactor=1.1, minNeighbors=self.min_neighbors,
+            minSize=(40, 40)
+        )
+
         faces = []
-        if results.detections:
-            h, w, _ = image.shape
-            
-            for detection in results.detections:
-                # Get bounding box
-                bbox = detection.location_data.relative_bounding_box
-                
-                # Convert to absolute coordinates
-                x = int(bbox.xmin * w)
-                y = int(bbox.ymin * h)
-                width = int(bbox.width * w)
-                height = int(bbox.height * h)
-                
-                # Add padding (30% on each side) to ensure InsightFace has enough context
-                padding_x = int(width * 0.3)
-                padding_y = int(height * 0.3)
-                
-                x = max(0, x - padding_x)
-                y = max(0, y - padding_y)
-                width = min(w - x, width + 2 * padding_x)
-                height = min(h - y, height + 2 * padding_y)
-                
-                # Crop face region
-                face_crop = image[y:y+height, x:x+width]
-                
-                # Store bounding box info
-                bbox_dict = {
-                    'x': x,
-                    'y': y,
-                    'width': width,
-                    'height': height
-                }
-                
-                faces.append((face_crop, bbox_dict))
-        
+        for sx, sy, sw, sh in boxes:
+            x, y = int(sx / scale), int(sy / scale)
+            width, height = int(sw / scale), int(sh / scale)
+            pad_x, pad_y = int(width * 0.25), int(height * 0.25)
+            x0, y0 = max(0, x - pad_x), max(0, y - pad_y)
+            x1, y1 = min(w, x + width + pad_x), min(h, y + height + pad_y)
+            crop = rgb[y0:y1, x0:x1]
+            if crop.size:
+                faces.append((crop, {
+                    "x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0
+                }))
         return faces
-    
-    def detect_from_base64(self, base64_image: str) -> List[Tuple[np.ndarray, dict]]:
-        """
-        Detect faces from base64 encoded image.
-        
-        Args:
-            base64_image: Base64 encoded image string
-            
-        Returns:
-            List of tuples (cropped_face, bounding_box_dict)
-        """
-        image = self.decode_image(base64_image)
-        return self.detect_faces(image)
-    
-    def __del__(self):
-        """Cleanup MediaPipe resources."""
-        if hasattr(self, 'face_detection'):
-            self.face_detection.close()
+
+    def detect_from_base64(self, base64_image: str):
+        return self.detect_faces(self.decode_image(base64_image))
