@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     face_detector = FaceDetector(min_detection_confidence=0.7)
     
     print("🧠 Loading InsightFace embedding model (this may take a moment)...")
-    face_embedder = FaceEmbedder(model_name='buffalo_l')
+    face_embedder = FaceEmbedder(model_name='buffalo_s')
     
     print("🔍 Initializing FAISS vector store...")
     vector_store = VectorStore(embedding_dim=512, index_path="data/faiss_index")
