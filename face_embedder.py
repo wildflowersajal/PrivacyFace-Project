@@ -23,7 +23,7 @@ class FaceEmbedder:
         )
         
         # Prepare model (downloads if needed)
-        self.app.prepare(ctx_id=-1, det_size=(640, 640))
+        self.app.prepare(ctx_id=-1, det_size=(320, 320))
         
         self.embedding_size = 512  # ArcFace produces 512-dim embeddings
         
