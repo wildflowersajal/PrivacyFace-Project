@@ -1,32 +1,18 @@
-FROM python:3.11-slim
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Copy package files
+COPY package*.json ./
 
-# Copy requirements
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies
+RUN npm install
 
 # Copy application code
 COPY . .
 
-# Create data directory
-RUN mkdir -p data
-
 # Expose port
-EXPOSE 8000
+EXPOSE 5173
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run development server
+CMD ["npm", "run", "dev", "--", "--host"]
