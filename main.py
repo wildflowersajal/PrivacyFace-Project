@@ -1,346 +1,189 @@
-"""FastAPI main application."""
+"""FastAPI backend using CPU-only Haar detection and compact LBP matching."""
+from contextlib import asynccontextmanager
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import numpy as np
-from typing import Optional
 
 from models import (
     EnrollRequest, EnrollResponse, RecognizeRequest, RecognizeResponse,
     UserResponse, UsersListResponse, DeleteResponse, HealthResponse, FaceMatch
 )
 from face_detector import FaceDetector
-from vector_store import VectorStore
 from database import Database
+from lbp_recognition import extract_lbp, compare_lbp
 
-
-# Global instances (initialized on startup)
 face_detector: Optional[FaceDetector] = None
-face_embedder = None
-vector_store: Optional[VectorStore] = None
 database: Optional[Database] = None
-
-# Recognition threshold (cosine similarity)
-RECOGNITION_THRESHOLD = 0.55
+# Conservative demo threshold. Real-world performance must be validated with consented test data.
+LBP_DISTANCE_THRESHOLD = 0.42
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle manager for loading models on startup."""
-    global face_detector, face_embedder, vector_store, database
-    
-    print("🚀 Initializing HelloFace backend...")
-    
-    # Initialize components
-    # Keep heavy ML models unloaded on Render's 512 MiB free instance.
-    print("📷 Initializing lightweight OpenCV face detector...")
+    global face_detector, database
+    print("Starting low-memory face recognition API...")
     face_detector = FaceDetector(min_detection_confidence=0.7)
-
-    print("🔍 Initializing FAISS vector store...")
-    vector_store = VectorStore(embedding_dim=512, index_path="data/faiss_index")
-    
-    print("💾 Connecting to database...")
     database = Database(db_path="data/helloface.db")
-    
-    print("✅ HelloFace lightweight API ready; face embedding is disabled on 512 MiB tier.")
-    
+    print("Haar detector and LBP descriptor ready.")
     yield
-    
-    # Cleanup on shutdown
-    print("👋 Shutting down HelloFace backend...")
+    print("Shutting down face recognition API.")
 
 
-# Create FastAPI app
 app = FastAPI(
-    title="HelloFace API",
-    description="100% Free, Open-Source Face Recognition System",
-    version="1.0.0",
+    title="PrivacyFace API",
+    description="Consent-based, CPU-only face matching demo using OpenCV Haar + LBP.",
+    version="1.1.0",
     lifespan=lifespan
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "https://privacy-face-project.vercel.app",
+        "https://privacy-face-project-git-main-aa-9848.vercel.app"
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"]
 )
 
 
-@app.get("/", tags=["Root"])
+@app.get("/")
 async def root():
-    """Root endpoint."""
-    return {
-        "message": "HelloFace API - 100% Free Face Recognition",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
+    return {"message": "PrivacyFace API", "version": "1.1.0", "docs": "/docs"}
 
 
-@app.get("/health", response_model=HealthResponse, tags=["Health"])
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint."""
+    ready = face_detector is not None and database is not None
     return HealthResponse(
-        status="healthy",
-        models_loaded=False,
+        status="healthy" if ready else "starting",
+        models_loaded=ready,
         database_connected=database is not None,
-        vector_store_ready=vector_store is not None
+        vector_store_ready=database is not None
     )
 
 
-@app.post("/enroll", response_model=EnrollResponse, tags=["Enrollment"])
+@app.post("/enroll", response_model=EnrollResponse)
 async def enroll_user(request: EnrollRequest):
-    """
-    Enroll a new user with their face.
-    
-    - Detects face in the provided image
-    - Generates face embedding
-    - Stores in database and vector store
-    """
+    if not request.consent:
+        raise HTTPException(status_code=400, detail="Explicit consent is required before biometric enrollment.")
     try:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Real face enrollment is disabled on the free 512 MiB hosting tier because the embedding model exceeds available memory."
-        )
-        # Check if email already exists
-        existing_user = database.get_user_by_email(request.email)
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"User with email {request.email} already enrolled"
-            )
-        
-        # Detect faces
+        existing = database.get_user_by_email(request.email)
+        if existing:
+            raise HTTPException(status_code=400, detail="This email is already enrolled.")
         faces = face_detector.detect_from_base64(request.image)
-        
         if len(faces) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No face detected in image. Please ensure your face is clearly visible."
-            )
-        
+            raise HTTPException(status_code=400, detail="No face detected. Improve lighting and look at the camera.")
         if len(faces) > 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Multiple faces detected. Please ensure only one face is in the image."
-            )
-        
-        # Get face crop
-        face_crop, bbox = faces[0]
-        
-        # Generate embedding
-        embedding = face_embedder.get_embedding(face_crop)
-        
-        if embedding is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to generate face embedding. Please try with a clearer image."
-            )
-        
-        # Store in database (without embedding for now)
+            raise HTTPException(status_code=400, detail="More than one face detected. Only one person should be in the frame.")
+        face_crop, _bbox = faces[0]
+        descriptor = extract_lbp(face_crop)
         user = database.create_user(
-            name=request.name,
+            name=request.name.strip(),
             email=request.email,
-            embedding=embedding.tolist()
+            embedding=descriptor
         )
-        
-        # Add to vector store
-        vector_store.add_embedding(user.id, embedding)
-        
         return EnrollResponse(
             user_id=user.id,
             name=user.name,
             email=user.email,
             enrolled_at=user.enrolled_at,
-            message=f"User {user.name} enrolled successfully!"
+            message=f"{user.name} enrolled successfully. The face descriptor is stored encrypted."
         )
-        
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Enrollment failed: {str(e)}"
-        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Enrollment failed: {str(exc)}")
 
 
-@app.post("/recognize", response_model=RecognizeResponse, tags=["Recognition"])
+@app.post("/recognize", response_model=RecognizeResponse)
 async def recognize_face(request: RecognizeRequest):
-    """
-    Recognize a face in the provided image.
-    
-    - Detects face in image
-    - Generates embedding
-    - Searches vector store for match
-    - Returns user info if confidence above threshold
-    """
     try:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Real face recognition is disabled on the free 512 MiB hosting tier because the embedding model exceeds available memory."
-        )
-        # Check if any users enrolled
-        if vector_store.get_total_embeddings() == 0:
-            return RecognizeResponse(
-                recognized=False,
-                match=None,
-                message="No users enrolled yet. Please enroll users first."
-            )
-        
-        # Detect faces
         faces = face_detector.detect_from_base64(request.image)
-        
-        if len(faces) == 0:
+        if not faces:
+            return RecognizeResponse(recognized=False, match=None, message="No face detected.")
+        # Use the largest detected face for the demo.
+        face_crop, bbox = max(faces, key=lambda item: item[1]["width"] * item[1]["height"])
+        query_descriptor = extract_lbp(face_crop)
+
+        best_user = None
+        best_distance = float("inf")
+        for user in database.get_all_users():
+            if not user.embedding_encrypted:
+                continue
+            stored = database.decrypt_embedding(user.embedding_encrypted)
+            distance = compare_lbp(query_descriptor, stored)
+            if distance < best_distance:
+                best_distance = distance
+                best_user = user
+
+        if best_user is None:
+            return RecognizeResponse(recognized=False, match=None, message="No enrolled faces yet.")
+        confidence = max(0.0, min(1.0, 1.0 - best_distance))
+        if best_distance > LBP_DISTANCE_THRESHOLD:
             return RecognizeResponse(
-                recognized=False,
-                match=None,
-                message="No face detected in image."
+                recognized=False, match=None,
+                message=f"No confident match (similarity score: {confidence:.2f}). Try better lighting and a front-facing photo."
             )
-        
-        # Use first detected face
-        face_crop, bbox = faces[0]
-        
-        # Generate embedding
-        embedding = face_embedder.get_embedding(face_crop)
-        
-        if embedding is None:
-            return RecognizeResponse(
-                recognized=False,
-                match=None,
-                message="Failed to generate face embedding."
-            )
-        
-        # Search vector store
-        results = vector_store.search(embedding, k=1)
-        
-        if not results:
-            return RecognizeResponse(
-                recognized=False,
-                match=None,
-                message="No match found."
-            )
-        
-        # Get best match
-        user_id, confidence = results[0]
-        
-        # Check threshold
-        if confidence < RECOGNITION_THRESHOLD:
-            return RecognizeResponse(
-                recognized=False,
-                match=None,
-                message=f"Unknown face (confidence: {confidence:.2f}, threshold: {RECOGNITION_THRESHOLD})"
-            )
-        
-        # Get user info
-        user = database.get_user(user_id)
-        
-        if not user:
-            return RecognizeResponse(
-                recognized=False,
-                match=None,
-                message="User not found in database."
-            )
-        
         return RecognizeResponse(
             recognized=True,
             match=FaceMatch(
-                user_id=user.id,
-                name=user.name,
-                email=user.email,
+                user_id=best_user.id,
+                name=best_user.name,
+                email=best_user.email,
                 confidence=confidence,
                 bounding_box=bbox
             ),
-            message=f"Recognized: {user.name}"
+            message=f"Possible match: {best_user.name} (LBP demo matcher)"
         )
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Recognition failed: {str(e)}"
-        )
-
-
-@app.get("/users", response_model=UsersListResponse, tags=["Users"])
-async def get_users():
-    """Get list of all enrolled users."""
-    try:
-        users = database.get_all_users()
-        
-        user_responses = [
-            UserResponse(
-                user_id=user.id,
-                name=user.name,
-                email=user.email,
-                enrolled_at=user.enrolled_at
-            )
-            for user in users
-        ]
-        
-        return UsersListResponse(
-            users=user_responses,
-            total=len(user_responses)
-        )
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch users: {str(e)}"
-        )
-
-
-@app.delete("/users/{user_id}", response_model=DeleteResponse, tags=["Users"])
-async def delete_user(user_id: int):
-    """
-    Delete a user and their face embedding.
-    
-    - Removes from database
-    - Removes from vector store
-    """
-    try:
-        # Check if user exists
-        user = database.get_user(user_id)
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"User with ID {user_id} not found"
-            )
-        
-        # Remove from vector store
-        vector_store.remove_embedding(user_id)
-        
-        # Remove from database
-        database.delete_user(user_id)
-        
-        return DeleteResponse(
-            message=f"User {user.name} deleted successfully",
-            user_id=user_id
-        )
-        
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete user: {str(e)}"
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Recognition failed: {str(exc)}")
+
+
+@app.get("/users", response_model=UsersListResponse)
+async def get_users():
+    try:
+        users = database.get_all_users()
+        return UsersListResponse(
+            users=[
+                UserResponse(user_id=u.id, name=u.name, email=u.email, enrolled_at=u.enrolled_at)
+                for u in users
+            ],
+            total=len(users)
         )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch users: {str(exc)}")
 
 
-@app.get("/stats", tags=["Statistics"])
+@app.delete("/users/{user_id}", response_model=DeleteResponse)
+async def delete_user(user_id: int):
+    try:
+        user = database.get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail=f"User {user_id} not found.")
+        database.delete_user(user_id)
+        return DeleteResponse(message=f"Deleted {user.name}.", user_id=user_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(exc)}")
+
+
+@app.get("/stats")
 async def get_stats():
-    """Get system statistics."""
     try:
         return {
             "total_users": database.get_user_count(),
-            "total_embeddings": vector_store.get_total_embeddings(),
-            "recognition_threshold": RECOGNITION_THRESHOLD,
-            "embedding_dimension": 512
+            "total_embeddings": database.get_user_count(),
+            "recognition_method": "OpenCV Haar + spatial LBP",
+            "distance_threshold": LBP_DISTANCE_THRESHOLD
         }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch stats: {str(e)}"
-        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(exc)}")
 
 
 if __name__ == "__main__":
